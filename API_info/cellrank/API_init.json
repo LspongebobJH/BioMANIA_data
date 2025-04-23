@@ -1,0 +1,1157 @@
+{
+    "cellrank.kernels.PseudotimeKernel": {
+        "Parameters": {
+            "adata": {
+                "type": "AnnData",
+                "default": null,
+                "optional": false,
+                "description": "Annotated data object.",
+                "optional_value": true
+            },
+            "time_key": {
+                "type": "str",
+                "default": null,
+                "optional": false,
+                "description": "Key in :attr:`~anndata.AnnData.obs` where the pseudotime is stored.",
+                "optional_value": false
+            },
+            "backward": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Direction of the process.\nIf :obj:`True`, the :attr:`pseudotime` will be set to ``max(pseudotime) - pseudotime``.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": null,
+            "description": ""
+        },
+        "Docstring": "Kernel which computes directed transition probabilities based on a k-NN graph and pseudotime.\n\n.. seealso::\n    - See :doc:`../../../notebooks/tutorials/kernels/300_pseudotime` on how to\n      compute the :attr:`~cellrank.kernels.PseudotimeKernel.transition_matrix` based on the pseudotime.\n\nThe k-NN graph contains information about the (undirected) connectivities among cells, reflecting their similarity.\nPseudotime can be used to either remove edges that point against the direction of increasing pseudotime\n:cite:`setty:19` or to down-weight them :cite:`stassen:21`.\n\nParameters\n----------\nadata\n    Annotated data object.\nbackward\n    Direction of the process.\n    If :obj:`True`, the :attr:`pseudotime` will be set to ``max(pseudotime) - pseudotime``.\ntime_key\n    Key in :attr:`~anndata.AnnData.obs` where the pseudotime is stored.\nkwargs\n    Keyword arguments for the :class:`~cellrank.kernels.ConnectivityKernel`.",
+        "description": "Kernel which computes directed transition probabilities based on a k-NN graph and pseudotime... seealso::\n    - See :doc:`../../../notebooks/tutorials/kernels/300_pseudotime` on how to\n      compute the :attr:`~cellrank.kernels.PseudotimeKernel.transition_matrix` based on the pseudotime.\n\nThe k-NN graph contains information about the (undirected) connectivities among cells, reflecting their similarity.\nPseudotime can be used to either remove edges that point against the direction of increasing pseudotime\n:cite:`setty:19` or to down-weight them :cite:`stassen:21`.",
+        "example": "",
+        "api_type": "class",
+        "api_calling": [
+            "cellrank.kernels.PseudotimeKernel(adata=$, time_key=@, backward=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.kernels.PseudotimeKernel.compute_transition_matrix": {
+        "Parameters": {
+            "threshold_scheme": {
+                "type": "Union[Literal[soft, hard], Callable[float, ndarray, ndarray, ndarray]]",
+                "default": "hard",
+                "optional": true,
+                "description": "Which method to use when biasing the graph. Valid options are:\n\n- ``'hard'`` - based on *Palantir* :cite:`setty:19` which removes some edges that point against\n  the direction of increasing pseudotime. To avoid disconnecting the graph, it does not\n  remove all edges that point against the direction of increasing pseudotime, but keeps the ones\n  that point to cells inside a close radius. This radius is chosen according to the local cell density.\n- ``'soft'`` - based on *VIA* :cite:`stassen:21` which down-weights edges that points against\n  the direction of increasing pseudotime. Essentially, the further \"behind\"\n  a query cell is in pseudotime with respect\n  to the current reference cell, the more penalized will be its graph-connectivity.\n- :class:`callable` - any function conforming to the signature of\n  :func:`cellrank.kernels.utils.ThresholdSchemeABC.__call__`.",
+                "optional_value": false
+            },
+            "frac_to_keep": {
+                "type": "float",
+                "default": "0.3",
+                "optional": true,
+                "description": "Fraction of the closest neighbors (according to graph connectivities) are kept, no matter whether they lie\nin the pseudotemporal past or future. This is done to ensure that the graph remains connected.\nOnly used when ``threshold_scheme = 'hard'``. Must be in :math:`[0, 1]`.",
+                "optional_value": false
+            },
+            "b": {
+                "type": "float",
+                "default": "10.0",
+                "optional": true,
+                "description": "The growth rate of generalized logistic function. Only used when ``threshold_scheme = 'soft'``.",
+                "optional_value": false
+            },
+            "nu": {
+                "type": "float",
+                "default": "0.5",
+                "optional": true,
+                "description": "Affects near which asymptote maximum growth occurs. Only used when ``threshold_scheme = 'soft'``.",
+                "optional_value": false
+            },
+            "check_irreducibility": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Optional check for irreducibility of the final transition matrix.",
+                "optional_value": false
+            },
+            "n_jobs": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Number of parallel jobs. If -1, use all available cores. If :obj:`None` or 1, the execution is sequential.",
+                "optional_value": false
+            },
+            "backend": {
+                "type": "Literal[loky, multiprocessing, threading]",
+                "default": "loky",
+                "optional": true,
+                "description": "Which backend to use for parallelization. See :class:`~joblib.Parallel` for valid options.",
+                "optional_value": true
+            },
+            "show_progress_bar": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to show a progress bar. Disabling it may slightly improve performance.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "PseudotimeKernel",
+            "description": "Returns self and updates :attr:`transition_matrix` and :attr:`params`."
+        },
+        "Docstring": "Compute transition matrix based on k-NN graph and pseudotemporal ordering.\n\nDepending on the choice of the ``threshold_scheme``, it is based on ideas by either *Palantir*\n:cite:`setty:19` or *VIA* :cite:`stassen:21`.\n\nParameters\n----------\nthreshold_scheme\n    Which method to use when biasing the graph. Valid options are:\n\n    - ``'hard'`` - based on *Palantir* :cite:`setty:19` which removes some edges that point against\n      the direction of increasing pseudotime. To avoid disconnecting the graph, it does not\n      remove all edges that point against the direction of increasing pseudotime, but keeps the ones\n      that point to cells inside a close radius. This radius is chosen according to the local cell density.\n    - ``'soft'`` - based on *VIA* :cite:`stassen:21` which down-weights edges that points against\n      the direction of increasing pseudotime. Essentially, the further \"behind\"\n      a query cell is in pseudotime with respect\n      to the current reference cell, the more penalized will be its graph-connectivity.\n    - :class:`callable` - any function conforming to the signature of\n      :func:`cellrank.kernels.utils.ThresholdSchemeABC.__call__`.\nfrac_to_keep\n    Fraction of the closest neighbors (according to graph connectivities) are kept, no matter whether they lie\n    in the pseudotemporal past or future. This is done to ensure that the graph remains connected.\n    Only used when ``threshold_scheme = 'hard'``. Must be in :math:`[0, 1]`.\nb\n    The growth rate of generalized logistic function. Only used when ``threshold_scheme = 'soft'``.\nnu\n    Affects near which asymptote maximum growth occurs. Only used when ``threshold_scheme = 'soft'``.\ncheck_irreducibility\n    Optional check for irreducibility of the final transition matrix.\nshow_progress_bar\n    Whether to show a progress bar. Disabling it may slightly improve performance.\nn_jobs\n    Number of parallel jobs. If -1, use all available cores. If :obj:`None` or 1, the execution is sequential.\nbackend\n    Which backend to use for parallelization. See :class:`~joblib.Parallel` for valid options.\nkwargs\n    Keyword arguments for ``threshold_scheme``.\n\nReturns\n-------\nReturns self and updates :attr:`transition_matrix` and :attr:`params`.",
+        "description": "Compute transition matrix based on k-NN graph and pseudotemporal ordering.Depending on the choice of the ``threshold_scheme``, it is based on ideas by either *Palantir*\n:cite:`setty:19` or *VIA* :cite:`stassen:21`.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.kernels.PseudotimeKernel.compute_transition_matrix(threshold_scheme=@, frac_to_keep=@, b=@, nu=@, check_irreducibility=@, n_jobs=@, backend=$, show_progress_bar=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.kernels.PseudotimeKernel.plot_projection": {
+        "Parameters": {
+            "basis": {
+                "type": "str",
+                "default": "umap",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obsm` containing the basis.",
+                "optional_value": false
+            },
+            "key_added": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "If not :obj:`None`, save the result to :attr:`adata.obsm['{key_added}'] <anndata.AnnData.obsm>`.\nOtherwise, save the result to ``'T_fwd_{basis}'`` or ``'T_bwd_{basis}'``, depending on the direction.",
+                "optional_value": false
+            },
+            "recompute": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Whether to recompute the projection if it already exists.",
+                "optional_value": false
+            },
+            "stream": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "If :obj:`True`, use :func:`~scvelo.pl.velocity_embedding_stream`.\nOtherwise, use :func:`~scvelo.pl.velocity_embedding_grid`.",
+                "optional_value": false
+            },
+            "connectivities": {
+                "type": "Optional[spmatrix]",
+                "default": "None",
+                "optional": true,
+                "description": "Connectivity matrix to use for projection. If :obj:`None`, use ones from the underlying kernel, is possible.",
+                "optional_value": true
+            }
+        },
+        "Returns": {
+            "type": "Nothing, just plots and modifies :attr:`~anndata.AnnData.obsm` with a key based on the ``key_added``.",
+            "description": ""
+        },
+        "Docstring": "Plot :attr:`transition_matrix` as a stream or a grid plot.\n\nParameters\n----------\nbasis\n    Key in :attr:`~anndata.AnnData.obsm` containing the basis.\nkey_added\n    If not :obj:`None`, save the result to :attr:`adata.obsm['{key_added}'] <anndata.AnnData.obsm>`.\n    Otherwise, save the result to ``'T_fwd_{basis}'`` or ``'T_bwd_{basis}'``, depending on the direction.\nrecompute\n    Whether to recompute the projection if it already exists.\nstream\n    If :obj:`True`, use :func:`~scvelo.pl.velocity_embedding_stream`.\n    Otherwise, use :func:`~scvelo.pl.velocity_embedding_grid`.\nconnectivities\n    Connectivity matrix to use for projection. If :obj:`None`, use ones from the underlying kernel, is possible.\nkwargs\n    Keyword argument for the above-mentioned plotting function.\n\nReturns\n-------\nNothing, just plots and modifies :attr:`~anndata.AnnData.obsm` with a key based on the ``key_added``.",
+        "description": "Plot :attr:`transition_matrix` as a stream or a grid plot.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.kernels.PseudotimeKernel.plot_projection(basis=@, key_added=@, recompute=@, stream=@, connectivities=$)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.kernels.PseudotimeKernel.plot_random_walks": {
+        "Parameters": {
+            "n_sims": {
+                "type": "int",
+                "default": "100",
+                "optional": true,
+                "description": "Number of random walks to simulate.",
+                "optional_value": false
+            },
+            "max_iter": {
+                "type": "Union[int, float]",
+                "default": "0.25",
+                "optional": true,
+                "description": "Maximum number of steps of a random walk. If a :class:`float`, it can be specified\nas a fraction of the number of cells.",
+                "optional_value": false
+            },
+            "seed": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Random seed.",
+                "optional_value": false
+            },
+            "successive_hits": {
+                "type": "int",
+                "default": "0",
+                "optional": true,
+                "description": "Number of successive hits in the ``stop_ixs`` required to stop prematurely.",
+                "optional_value": false
+            },
+            "start_ixs": {
+                "type": "Optional[Union[Sequence[str], Mapping[str, Union[str, Sequence[str], tuple[float, float]]]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Cells from which to sample the starting points. If :obj:`None`, use all cells.\nCan be specified as:\n\n- :class:`dict` - dictionary with 1 key in :attr:`~anndata.AnnData.obs` with values corresponding\n  to either 1 or more clusters (if the column is categorical) or a :class:`tuple` specifying\n  :math:`[min, max]` interval from which to select the indices.\n- :class:`~typing.Sequence` - sequence of cell ids in :attr:`~anndata.AnnData.obs_names`.\n\nFor example ``{'dpt_pseudotime': [0, 0.1]}`` means that starting points for random walks\nwill be sampled uniformly from cells whose pseudotime is in :math:`[0, 0.1]`.",
+                "optional_value": false
+            },
+            "stop_ixs": {
+                "type": "Optional[Union[Sequence[str], Mapping[str, Union[str, Sequence[str], tuple[float, float]]]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Cells which when hit, the random walk is terminated. If :obj:`None`, terminate after ``max_iters``.\nCan be specified as:\n\n- :class:`dict` - dictionary with 1 key in :attr:`~anndata.AnnData.obs` with values corresponding\n  to either 1 or more clusters (if the column is categorical) or a :class:`tuple` specifying\n  :math:`[min, max]` interval from which to select the indices.\n- :class:`~typing.Sequence` - sequence of cell ids in :attr:`~anndata.AnnData.obs_names`.\n\nFor example ``{'clusters': ['Alpha', 'Beta']}`` and ``successive_hits = 3`` means that the random walk will\nstop prematurely after cells in the above specified clusters have been visited successively 3 times in\na row.",
+                "optional_value": false
+            },
+            "basis": {
+                "type": "str",
+                "default": "umap",
+                "optional": true,
+                "description": "Basis in :attr:`~anndata.AnnData.obsm` to use as an embedding.",
+                "optional_value": false
+            },
+            "cmap": {
+                "type": "Union[str, LinearSegmentedColormap]",
+                "default": "gnuplot",
+                "optional": true,
+                "description": "Colormap for the random walk lines.",
+                "optional_value": false
+            },
+            "linewidth": {
+                "type": "float",
+                "default": "1.0",
+                "optional": true,
+                "description": "Width of the random walk lines.",
+                "optional_value": false
+            },
+            "linealpha": {
+                "type": "float",
+                "default": "0.3",
+                "optional": true,
+                "description": "Alpha value of the random walk lines.",
+                "optional_value": false
+            },
+            "ixs_legend_loc": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Legend location for the start/top indices.",
+                "optional_value": false
+            },
+            "n_jobs": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Number of parallel jobs. If -1, use all available cores. If :obj:`None` or 1, the execution is sequential.",
+                "optional_value": false
+            },
+            "backend": {
+                "type": "str",
+                "default": "loky",
+                "optional": true,
+                "description": "Which backend to use for parallelization. See :class:`~joblib.Parallel` for valid options.",
+                "optional_value": false
+            },
+            "show_progress_bar": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to show a progress bar. Disabling it may slightly improve performance.",
+                "optional_value": false
+            },
+            "figsize": {
+                "type": "Optional[tuple[float, float]]",
+                "default": "None",
+                "optional": true,
+                "description": "Size of the figure.",
+                "optional_value": false
+            },
+            "dpi": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Dots per inch.",
+                "optional_value": false
+            },
+            "save": {
+                "type": "Optional[Union[Path, str]]",
+                "default": "None",
+                "optional": true,
+                "description": "Filename where to save the plot.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "Nothing, just plots the figure. Optionally saves it based on ``save``.",
+            "description": "For each random walk, the first/last cell is marked by the start/end colors of ``cmap``."
+        },
+        "Docstring": "Plot random walks in an embedding.\n\nThis method simulates random walks on the Markov chain defined though the corresponding transition matrix. The\nmethod is intended to give qualitative rather than quantitative insights into the transition matrix. Random\nwalks are simulated by iteratively choosing the next cell based on the current cell's transition probabilities.\n\nParameters\n----------\nn_sims\n    Number of random walks to simulate.\nmax_iter\n    Maximum number of steps of a random walk. If a :class:`float`, it can be specified\n    as a fraction of the number of cells.\nseed\n    Random seed.\nsuccessive_hits\n    Number of successive hits in the ``stop_ixs`` required to stop prematurely.\nstart_ixs\n    Cells from which to sample the starting points. If :obj:`None`, use all cells.\n    Can be specified as:\n\n    - :class:`dict` - dictionary with 1 key in :attr:`~anndata.AnnData.obs` with values corresponding\n      to either 1 or more clusters (if the column is categorical) or a :class:`tuple` specifying\n      :math:`[min, max]` interval from which to select the indices.\n    - :class:`~typing.Sequence` - sequence of cell ids in :attr:`~anndata.AnnData.obs_names`.\n\n    For example ``{'dpt_pseudotime': [0, 0.1]}`` means that starting points for random walks\n    will be sampled uniformly from cells whose pseudotime is in :math:`[0, 0.1]`.\nstop_ixs\n    Cells which when hit, the random walk is terminated. If :obj:`None`, terminate after ``max_iters``.\n    Can be specified as:\n\n    - :class:`dict` - dictionary with 1 key in :attr:`~anndata.AnnData.obs` with values corresponding\n      to either 1 or more clusters (if the column is categorical) or a :class:`tuple` specifying\n      :math:`[min, max]` interval from which to select the indices.\n    - :class:`~typing.Sequence` - sequence of cell ids in :attr:`~anndata.AnnData.obs_names`.\n\n    For example ``{'clusters': ['Alpha', 'Beta']}`` and ``successive_hits = 3`` means that the random walk will\n    stop prematurely after cells in the above specified clusters have been visited successively 3 times in\n    a row.\nbasis\n    Basis in :attr:`~anndata.AnnData.obsm` to use as an embedding.\ncmap\n    Colormap for the random walk lines.\nlinewidth\n    Width of the random walk lines.\nlinealpha\n    Alpha value of the random walk lines.\nixs_legend_loc\n    Legend location for the start/top indices.\nshow_progress_bar\n    Whether to show a progress bar. Disabling it may slightly improve performance.\nn_jobs\n    Number of parallel jobs. If -1, use all available cores. If :obj:`None` or 1, the execution is sequential.\nbackend\n    Which backend to use for parallelization. See :class:`~joblib.Parallel` for valid options.\nfigsize\n    Size of the figure.\ndpi\n    Dots per inch.\nsave\n    Filename where to save the plot.\nkwargs\n    Keyword arguments for :func:`~scvelo.pl.scatter`.\n\nReturns\n-------\nNothing, just plots the figure. Optionally saves it based on ``save``.\nFor each random walk, the first/last cell is marked by the start/end colors of ``cmap``.",
+        "description": "Plot random walks in an embedding.This method simulates random walks on the Markov chain defined though the corresponding transition matrix. The\nmethod is intended to give qualitative rather than quantitative insights into the transition matrix. Random\nwalks are simulated by iteratively choosing the next cell based on the current cell's transition probabilities.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.kernels.PseudotimeKernel.plot_random_walks(n_sims=@, max_iter=@, seed=@, successive_hits=@, start_ixs=@, stop_ixs=@, basis=@, cmap=@, linewidth=@, linealpha=@, ixs_legend_loc=@, n_jobs=@, backend=@, show_progress_bar=@, figsize=@, dpi=@, save=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA": {
+        "Parameters": {
+            "object": {
+                "type": "Union[str, bool, ndarray, spmatrix, AnnData, KernelExpression]",
+                "default": null,
+                "optional": false,
+                "description": "Can be one of the following types:\n\n- :class:`~anndata.AnnData` - annotated data object.\n- :class:`~scipy.sparse.spmatrix`, :class:`~numpy.ndarray` - row-normalized transition matrix.\n- :class:`~cellrank.kernels.KernelExpression` - kernel expression.\n- :class:`str` - key in :attr:`~anndata.AnnData.obsp` where the transition matrix is stored and\n  ``adata`` must be provided in this case.\n- :class:`bool` - directionality of the transition matrix that will be used to infer its storage location.\n  If :obj:`None`, the directionality will be determined automatically and\n  ``adata`` must be provided in this case.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": null,
+            "description": ""
+        },
+        "Docstring": "Generalized Perron Cluster Cluster Analysis (GPCCA) :cite:`reuter:18,reuter:19`.\n\n.. seealso::\n    - See :doc:`../../../notebooks/tutorials/estimators/600_initial_terminal` on how to compute the\n      :attr:`initial <initial_states>` and :attr:`terminal <terminal_states>` states.\n    - See :doc:`../../../notebooks/tutorials/estimators/700_fate_probabilities` on how to compute the\n      :attr:`fate_probabilities` and :attr:`lineage_drivers`.\n\nThis is our main and recommended estimator implemented in `pyGPCCA <https://pygpcca.readthedocs.io/en/latest/>`_ .\nUse it to compute macrostates, automatically and semi-automatically classify these as initial, intermediate and\nterminal states, compute fate probabilities towards macrostates, uncover driver genes, and much more. To compute and\nclassify macrostates, we run the GPCCA algorithm under the hood, which returns a soft assignment of cells\nto macrostates, as well as a coarse-grained transition matrix among the set of macrostates\n:cite:`reuter:18,reuter:19`. This estimator allows you to inject prior knowledge where available\nto guide the identification of initial, intermediate and terminal states.\n\nParameters\n----------\nobject\n    Can be one of the following types:\n\n    - :class:`~anndata.AnnData` - annotated data object.\n    - :class:`~scipy.sparse.spmatrix`, :class:`~numpy.ndarray` - row-normalized transition matrix.\n    - :class:`~cellrank.kernels.KernelExpression` - kernel expression.\n    - :class:`str` - key in :attr:`~anndata.AnnData.obsp` where the transition matrix is stored and\n      ``adata`` must be provided in this case.\n    - :class:`bool` - directionality of the transition matrix that will be used to infer its storage location.\n      If :obj:`None`, the directionality will be determined automatically and\n      ``adata`` must be provided in this case.\nkwargs\n    Keyword arguments for the :class:`~cellrank.kernels.PrecomputedKernel`.",
+        "description": "Generalized Perron Cluster Cluster Analysis (GPCCA) :cite:`reuter:18,reuter:19`... seealso::\n    - See :doc:`../../../notebooks/tutorials/estimators/600_initial_terminal` on how to compute the\n      :attr:`initial <initial_states>` and :attr:`terminal <terminal_states>` states.\n    - See :doc:`../../../notebooks/tutorials/estimators/700_fate_probabilities` on how to compute the\n      :attr:`fate_probabilities` and :attr:`lineage_drivers`.\n\nThis is our main and recommended estimator implemented in `pyGPCCA <https://pygpcca.readthedocs.io/en/latest/>`_ .\nUse it to compute macrostates, automatically and semi-automatically classify these as initial, intermediate and\nterminal states, compute fate probabilities towards macrostates, uncover driver genes, and much more. To compute and\nclassify macrostates, we run the GPCCA algorithm under the hood, which returns a soft assignment of cells\nto macrostates, as well as a coarse-grained transition matrix among the set of macrostates\n:cite:`reuter:18,reuter:19`. This estimator allows you to inject prior knowledge where available\nto guide the identification of initial, intermediate and terminal states.",
+        "example": "",
+        "api_type": "class",
+        "api_calling": [
+            "cellrank.estimators.GPCCA(object=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA.compute_fate_probabilities": {
+        "Parameters": {
+            "keys": {
+                "type": "Optional[Sequence[str]]",
+                "default": "None",
+                "optional": true,
+                "description": "Terminal states for which to compute the fate probabilities.\nIf :obj:`None`, use all states defined in :attr:`terminal_states`.",
+                "optional_value": false
+            },
+            "solver": {
+                "type": "Union[str, Literal[direct, gmres, lgmres, bicgstab, gcrotmk]]",
+                "default": "gmres",
+                "optional": true,
+                "description": "Solver to use for the linear problem. Options are ``'direct'``, ``'gmres'``, ``'lgmres'``, ``'bicgstab'`` or\n``'gcrotmk'`` when ``use_petsc = False``.\n\nInformation on the :mod:`scipy` iterative solvers can be found in :mod:`scipy.sparse.linalg` or for\nthe ``petsc`` solvers `here <https://petsc.org/release/overview/linear_solve_table/>`__.",
+                "optional_value": false
+            },
+            "use_petsc": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to use solvers from :mod:`petsc4py` or :mod:`scipy`. Recommended for large problems.\nIf no installation is found, defaults to :func:`~scipy.sparse.linalg.gmres`.",
+                "optional_value": false
+            },
+            "n_jobs": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Number of parallel jobs to use when using an iterative solver.",
+                "optional_value": false
+            },
+            "backend": {
+                "type": "Literal[loky, multiprocessing, threading]",
+                "default": "loky",
+                "optional": true,
+                "description": "Which backend to use for multiprocessing. See :class:`~joblib.Parallel` for valid options.",
+                "optional_value": true
+            },
+            "show_progress_bar": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to show progress bar. Only used when ``solver != 'direct'``.",
+                "optional_value": false
+            },
+            "tol": {
+                "type": "float",
+                "default": "1e-06",
+                "optional": true,
+                "description": "Convergence tolerance for the iterative solver. The default is fine for most cases, only consider\ndecreasing this for severely ill-conditioned matrices.",
+                "optional_value": false
+            },
+            "preconditioner": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Preconditioner to use, only available when ``use_petsc = True``. For valid options, see\n`here <https://petsc.org/release/docs/manual/ksp/?highlight=pctype#preconditioners>`__.\nWe recommend the ``'ilu'`` preconditioner for badly conditioned problems.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "Nothing, just updates the following fields:",
+            "description": "- :attr:`fate_probabilities` - Fate probabilities."
+        },
+        "Docstring": "Compute fate probabilities.\n\nFor each cell, this computes the probability of being absorbed in any of the :attr:`terminal_states`. In\nparticular, this corresponds to the probability that a random walk initialized in transient cell :math:`i`\nwill reach any cell from a fixed transient state before reaching a cell from any other transient state.\n\nParameters\n----------\nkeys\n    Terminal states for which to compute the fate probabilities.\n    If :obj:`None`, use all states defined in :attr:`terminal_states`.\nsolver\n    Solver to use for the linear problem. Options are ``'direct'``, ``'gmres'``, ``'lgmres'``, ``'bicgstab'`` or\n    ``'gcrotmk'`` when ``use_petsc = False``.\n\n    Information on the :mod:`scipy` iterative solvers can be found in :mod:`scipy.sparse.linalg` or for\n    the ``petsc`` solvers `here <https://petsc.org/release/overview/linear_solve_table/>`__.\nuse_petsc\n    Whether to use solvers from :mod:`petsc4py` or :mod:`scipy`. Recommended for large problems.\n    If no installation is found, defaults to :func:`~scipy.sparse.linalg.gmres`.\nn_jobs\n    Number of parallel jobs to use when using an iterative solver.\nbackend\n    Which backend to use for multiprocessing. See :class:`~joblib.Parallel` for valid options.\nshow_progress_bar\n    Whether to show progress bar. Only used when ``solver != 'direct'``.\ntol\n    Convergence tolerance for the iterative solver. The default is fine for most cases, only consider\n    decreasing this for severely ill-conditioned matrices.\npreconditioner\n    Preconditioner to use, only available when ``use_petsc = True``. For valid options, see\n    `here <https://petsc.org/release/docs/manual/ksp/?highlight=pctype#preconditioners>`__.\n    We recommend the ``'ilu'`` preconditioner for badly conditioned problems.\n\nReturns\n-------\nNothing, just updates the following fields:\n\n- :attr:`fate_probabilities` - Fate probabilities.",
+        "description": "Compute fate probabilities.For each cell, this computes the probability of being absorbed in any of the :attr:`terminal_states`. In\nparticular, this corresponds to the probability that a random walk initialized in transient cell :math:`i`\nwill reach any cell from a fixed transient state before reaching a cell from any other transient state.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.estimators.GPCCA.compute_fate_probabilities(keys=@, solver=@, use_petsc=@, n_jobs=@, backend=$, show_progress_bar=@, tol=@, preconditioner=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA.fit": {
+        "Parameters": {
+            "n_states": {
+                "type": "Optional[Union[int, Sequence[int]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Number of macrostates to compute. If a :class:`~typing.Sequence`, use the *minChi*\ncriterion :cite:`reuter:18`. If :obj:`None`, use the `eigengap <https://en.wikipedia.org/wiki/Eigengap>`__\nheuristic.",
+                "optional_value": false
+            },
+            "n_cells": {
+                "type": "Optional[int]",
+                "default": "30",
+                "optional": true,
+                "description": "Number of most likely cells from each macrostate to select.",
+                "optional_value": false
+            },
+            "cluster_key": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "If a key to cluster labels is given, names and colors of the states will be associated with the clusters.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "GPCCA",
+            "description": "Returns self and updates the following fields:"
+        },
+        "Docstring": "Prepare self for terminal states prediction.\n\nParameters\n----------\nn_states\n    Number of macrostates to compute. If a :class:`~typing.Sequence`, use the *minChi*\n    criterion :cite:`reuter:18`. If :obj:`None`, use the `eigengap <https://en.wikipedia.org/wiki/Eigengap>`__\n    heuristic.\nn_cells\n    Number of most likely cells from each macrostate to select.\ncluster_key\n    If a key to cluster labels is given, names and colors of the states will be associated with the clusters.\nkwargs\n    Keyword arguments for :meth:`compute_schur`.\n\nReturns\n-------\nReturns self and updates the following fields:",
+        "description": "Prepare self for terminal states prediction.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.estimators.GPCCA.fit(n_states=@, n_cells=@, cluster_key=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA.macrostates_memberships": {
+        "Parameters": {},
+        "Returns": {
+            "type": "Optional[Lineage]",
+            "description": null
+        },
+        "Value": null,
+        "Docstring": "Macrostate memberships.\n\n        Soft assignment of microstates (cells) to macrostates.\n        ",
+        "description": "Macrostate memberships.Soft assignment of microstates (cells) to macrostates.",
+        "example": "",
+        "api_type": "property",
+        "api_calling": [
+            "cellrank.estimators.GPCCA.macrostates_memberships()"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA.plot_fate_probabilities": {
+        "Parameters": {
+            "states": {
+                "type": "Optional[Union[str, Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Subset of the macrostates to show. If :obj:`None`, plot all macrostates.",
+                "optional_value": false
+            },
+            "color": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obs` or :attr:`anndata.AnnData.var` used to color the observations.",
+                "optional_value": false
+            },
+            "mode": {
+                "type": "Literal[embedding, time]",
+                "default": "embedding",
+                "optional": true,
+                "description": "Whether to plot the probabilities in an embedding or along the pseudotime.",
+                "optional_value": true
+            },
+            "time_key": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obs` where pseudotime is stored. Only used when ``mode = 'time'``.",
+                "optional_value": false
+            },
+            "same_plot": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to plot the data on the same plot or not. Only use when ``mode = 'embedding'``.\nIf `True` and ``discrete = False``, ``color`` is ignored.",
+                "optional_value": false
+            },
+            "title": {
+                "type": "Optional[Union[str, Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Title of the plot.",
+                "optional_value": false
+            },
+            "cmap": {
+                "type": "str",
+                "default": "viridis",
+                "optional": true,
+                "description": "Colormap for continuous annotations.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "Nothing, just plots the figure. Optionally saves it based on ``save``.",
+            "description": ""
+        },
+        "Docstring": "Plot fate probabilities.\n\nParameters\n----------\nstates\n    Subset of the macrostates to show. If :obj:`None`, plot all macrostates.\ncolor\n    Key in :attr:`~anndata.AnnData.obs` or :attr:`anndata.AnnData.var` used to color the observations.\nmode\n    Whether to plot the probabilities in an embedding or along the pseudotime.\ntime_key\n    Key in :attr:`~anndata.AnnData.obs` where pseudotime is stored. Only used when ``mode = 'time'``.\ntitle\n    Title of the plot.\nsame_plot\n    Whether to plot the data on the same plot or not. Only use when ``mode = 'embedding'``.\n    If `True` and ``discrete = False``, ``color`` is ignored.\ncmap\n    Colormap for continuous annotations.\nkwargs\n    Keyword arguments for :func:`~scvelo.pl.scatter`.\n\nReturns\n-------\nNothing, just plots the figure. Optionally saves it based on ``save``.",
+        "description": "Plot fate probabilities.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.estimators.GPCCA.plot_fate_probabilities(states=@, color=@, mode=$, time_key=@, same_plot=@, title=@, cmap=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA.plot_macrostates": {
+        "Parameters": {
+            "which": {
+                "type": "Literal[all, initial, terminal]",
+                "default": null,
+                "optional": false,
+                "description": "Which macrostates to plot. Valid options are:\n\n- ``'all'`` - plot all macrostates.\n- ``'initial'`` - plot macrostates marked as :attr:`initial_states`.\n- ``'terminal'`` - plot macrostates marked as :attr:`terminal_states`.",
+                "optional_value": true
+            },
+            "states": {
+                "type": "Optional[Union[str, Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Subset of the macrostates to show. If :obj:`None`, plot all macrostates.",
+                "optional_value": false
+            },
+            "color": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obs` or :attr:`~anndata.AnnData.var` used to color the observations.",
+                "optional_value": false
+            },
+            "discrete": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to plot the data as continuous or discrete observations.\nIf the data cannot be plotted as continuous observations, it will be plotted as discrete.",
+                "optional_value": false
+            },
+            "mode": {
+                "type": "Literal[embedding, time]",
+                "default": "embedding",
+                "optional": true,
+                "description": "Whether to plot the probabilities in an embedding or along the pseudotime.",
+                "optional_value": true
+            },
+            "time_key": {
+                "type": "str",
+                "default": "latent_time",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obs` where pseudotime is stored. Only used when ``mode = 'time'``.",
+                "optional_value": false
+            },
+            "same_plot": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to plot the data on the same plot or not. Only use when ``mode = 'embedding'``.\nIf `True` and ``discrete = False``, ``color`` is ignored.",
+                "optional_value": false
+            },
+            "title": {
+                "type": "Optional[Union[str, Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Title of the plot.",
+                "optional_value": false
+            },
+            "cmap": {
+                "type": "str",
+                "default": "viridis",
+                "optional": true,
+                "description": "Colormap for continuous annotations.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "Nothing, just plots the figure. Optionally saves it based on ``save``.",
+            "description": ""
+        },
+        "Docstring": "Plot macrostates on an embedding or along pseudotime.\n\nParameters\n----------\nwhich\n    Which macrostates to plot. Valid options are:\n\n    - ``'all'`` - plot all macrostates.\n    - ``'initial'`` - plot macrostates marked as :attr:`initial_states`.\n    - ``'terminal'`` - plot macrostates marked as :attr:`terminal_states`.\nstates\n    Subset of the macrostates to show. If :obj:`None`, plot all macrostates.\ncolor\n    Key in :attr:`~anndata.AnnData.obs` or :attr:`~anndata.AnnData.var` used to color the observations.\ndiscrete\n    Whether to plot the data as continuous or discrete observations.\n    If the data cannot be plotted as continuous observations, it will be plotted as discrete.\nmode\n    Whether to plot the probabilities in an embedding or along the pseudotime.\ntime_key\n    Key in :attr:`~anndata.AnnData.obs` where pseudotime is stored. Only used when ``mode = 'time'``.\ntitle\n    Title of the plot.\nsame_plot\n    Whether to plot the data on the same plot or not. Only use when ``mode = 'embedding'``.\n    If `True` and ``discrete = False``, ``color`` is ignored.\ncmap\n    Colormap for continuous annotations.\nkwargs\n    Keyword arguments for :func:`~scvelo.pl.scatter`.\n\nReturns\n-------\nNothing, just plots the figure. Optionally saves it based on ``save``.",
+        "description": "Plot macrostates on an embedding or along pseudotime.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.estimators.GPCCA.plot_macrostates(which=$, states=@, color=@, discrete=@, mode=$, time_key=@, same_plot=@, title=@, cmap=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.estimators.GPCCA.predict_terminal_states": {
+        "Parameters": {
+            "method": {
+                "type": "Literal[stability, top_n, eigengap, eigengap_coarse]",
+                "default": "stability",
+                "optional": true,
+                "description": "How to select the terminal states. Valid option are:\n\n- ``'eigengap'`` - select the number of states based on the\n  `eigengap <https://en.wikipedia.org/wiki/Eigengap>`__ of :attr:`transition_matrix`.\n- ``'eigengap_coarse'`` - select the number of states based on the *eigengap* of the diagonal\n  of :attr:`coarse_T`.\n- ``'top_n'`` - select top ``n_states`` based on the probability of the diagonal of :attr:`coarse_T`.\n- ``'stability'`` - select states which have a stability >= ``stability_threshold``.\n  The stability is given by the diagonal elements of :attr:`coarse_T`.",
+                "optional_value": true
+            },
+            "n_cells": {
+                "type": "int",
+                "default": "30",
+                "optional": true,
+                "description": "Number of most likely cells from each macrostate to select.",
+                "optional_value": false
+            },
+            "alpha": {
+                "type": "Optional[float]",
+                "default": "1",
+                "optional": true,
+                "description": "Weight given to the deviation of an eigenvalue from one.\nOnly used when ``method = 'eigengap'`` or ``method = 'eigengap_coarse'``.",
+                "optional_value": false
+            },
+            "stability_threshold": {
+                "type": "float",
+                "default": "0.96",
+                "optional": true,
+                "description": "Threshold used when ``method = 'stability'``.",
+                "optional_value": false
+            },
+            "n_states": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Number of states used when ``method = 'top_n'``.",
+                "optional_value": false
+            },
+            "allow_overlap": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Whether to allow overlapping names between initial and terminal states.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "GPCCA",
+            "description": "Returns self and updates the following fields:\n- :attr:`terminal_states` - Categorical annotation of terminal states.\n- :attr:`terminal_states_probabilities` - Probability to be a terminal state.\n- :attr:`terminal_states_memberships` - Terminal states memberships."
+        },
+        "Docstring": "Automatically select terminal states from macrostates.\n\nParameters\n----------\nmethod\n    How to select the terminal states. Valid option are:\n\n    - ``'eigengap'`` - select the number of states based on the\n      `eigengap <https://en.wikipedia.org/wiki/Eigengap>`__ of :attr:`transition_matrix`.\n    - ``'eigengap_coarse'`` - select the number of states based on the *eigengap* of the diagonal\n      of :attr:`coarse_T`.\n    - ``'top_n'`` - select top ``n_states`` based on the probability of the diagonal of :attr:`coarse_T`.\n    - ``'stability'`` - select states which have a stability >= ``stability_threshold``.\n      The stability is given by the diagonal elements of :attr:`coarse_T`.\nn_cells\n    Number of most likely cells from each macrostate to select.\nalpha\n    Weight given to the deviation of an eigenvalue from one.\n    Only used when ``method = 'eigengap'`` or ``method = 'eigengap_coarse'``.\nstability_threshold\n    Threshold used when ``method = 'stability'``.\nn_states\n    Number of states used when ``method = 'top_n'``.\nallow_overlap\n    Whether to allow overlapping names between initial and terminal states.\n\n\nReturns\n-------\nReturns self and updates the following fields:\n\n- :attr:`terminal_states` - Categorical annotation of terminal states.\n- :attr:`terminal_states_probabilities` - Probability to be a terminal state.\n- :attr:`terminal_states_memberships` - Terminal states memberships.",
+        "description": "Automatically select terminal states from macrostates.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.estimators.GPCCA.predict_terminal_states(method=$, n_cells=@, alpha=@, stability_threshold=@, n_states=@, allow_overlap=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.pl.circular_projection": {
+        "Parameters": {
+            "adata": {
+                "type": "AnnData",
+                "default": null,
+                "optional": false,
+                "description": "Annotated data object.",
+                "optional_value": true
+            },
+            "keys": {
+                "type": "Union[str, Sequence[str]]",
+                "default": null,
+                "optional": false,
+                "description": "Keys in :attr:`~anndata.AnnData.obs` or :attr:`~anndata.AnnData.var_names`. Additional keys are:\n\n- ``'kl_divergence'`` - as in :cite:`velten:17`, computes KL-divergence between the fate probabilities\n  of a cell and the average fate probabilities. See ``early_cells`` for more information.\n- ``'entropy'`` - as in :cite:`setty:19`, computes entropy over a cells fate probabilities.",
+                "optional_value": false
+            },
+            "backward": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Direction of the process.",
+                "optional_value": false
+            },
+            "lineages": {
+                "type": "Optional[Union[str, Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Lineages to plot. If :obj:`None`, plot all lineages.",
+                "optional_value": false
+            },
+            "early_cells": {
+                "type": "Optional[Union[Mapping[str, Sequence[str]], Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Cell ids or a mask marking early cells used to define the average fate probabilities. If :obj:`None`,\nuse all cells. Only used when ``'kl_divergence'`` is in the ``keys``. If a :class:`dict`, key specifies\na cluster key in :attr:`~anndata.AnnData.obs` and the values specify cluster labels containing early cells.",
+                "optional_value": false
+            },
+            "lineage_order": {
+                "type": "Optional[Literal[default, optimal]]",
+                "default": "None",
+                "optional": true,
+                "description": "Can be one of the following:\n\n- :obj:`None` - it will be determined automatically, based on the number of lineages.\n- ``'optimal'`` - order lineages optimally by solving the Traveling salesman problem (TSP).\n  Recommended for <= :math:`20` lineages.\n- ``'default'`` - use the order as specified by ``lineages``.",
+                "optional_value": true
+            },
+            "metric": {
+                "type": "Union[str, Callable[], ndarray, DataFrame]",
+                "default": "correlation",
+                "optional": true,
+                "description": "Metric to use when constructing pairwise distance matrix when ``lineage_order = 'optimal'``. For available\noptions, see :func:`~sklearn.metrics.pairwise_distances`.",
+                "optional_value": false
+            },
+            "normalize_by_mean": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "If :obj:`True`, normalize each lineage by its mean probability, as done in :cite:`velten:17`.",
+                "optional_value": false
+            },
+            "ncols": {
+                "type": "int",
+                "default": "4",
+                "optional": true,
+                "description": "Number of columns when plotting multiple ``keys``.",
+                "optional_value": false
+            },
+            "space": {
+                "type": "float",
+                "default": "0.25",
+                "optional": true,
+                "description": "Horizontal and vertical space between for :func:`~matplotlib.pyplot.subplots_adjust`.",
+                "optional_value": false
+            },
+            "use_raw": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Whether to access :attr:`~anndata.AnnData.raw` when there are ``keys`` in :attr:`~anndata.AnnData.var_names`.",
+                "optional_value": false
+            },
+            "label_distance": {
+                "type": "float",
+                "default": "1.25",
+                "optional": true,
+                "description": "Distance at which the lineage labels will be drawn.",
+                "optional_value": false
+            },
+            "label_rot": {
+                "type": "Union[Literal[default, best], float]",
+                "default": "best",
+                "optional": true,
+                "description": "How to rotate the labels. Valid options are:\n\n- ``'best'`` - rotate labels so that they are easily readable.\n- ``'default'`` - use :mod:`matplotlib`'s default.\n- :obj:`None` - same as ``'default'``.\n- :class:`float`, all labels will be rotated by this many degrees.",
+                "optional_value": false
+            },
+            "show_edges": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to show the edges surrounding the simplex.",
+                "optional_value": false
+            },
+            "key_added": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obsm` where to add the circular embedding. If :obj:`None`, it will be set to\n``'X_fate_simplex_{fwd,bwd}'``, based on the ``backward``.",
+                "optional_value": false
+            },
+            "figsize": {
+                "type": "Optional[tuple[float, float]]",
+                "default": "None",
+                "optional": true,
+                "description": "Size of the figure.",
+                "optional_value": false
+            },
+            "dpi": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Dots per inch.",
+                "optional_value": false
+            },
+            "save": {
+                "type": "Optional[Union[Path, str]]",
+                "default": "None",
+                "optional": true,
+                "description": "Filename where to save the plot.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "Nothing, just plots the figure. Optionally saves it based on ``save``. Also updates ``adata`` with the following fields:",
+            "description": "- :attr:`adata.obsm['{key_added}'] <anndata.AnnData.obsm>` - the circular projection.\n- :attr:`adata.obs['to_{initial,terminal}_states_{method}'] <anndata.AnnData.obs>` - the priming degree,\nif a method is present in the ``keys``."
+        },
+        "Docstring": "Visualize fate probabilities in a circular embedding :cite:`velten:17,jaitin:14`.\n\nWe arrange all computed terminal states evenly spaced around the unit circle and place\ncells inside the unit circle in a way that reflects their fate probabilities. In other words,\nthe more certain we are that a cell will transition towards a given terminal state, the closer\nwe place it to that terminal state. Uncommitted cells thus reside in the middle of the circle.\n\nParameters\n----------\nadata\n    Annotated data object.\nkeys\n    Keys in :attr:`~anndata.AnnData.obs` or :attr:`~anndata.AnnData.var_names`. Additional keys are:\n\n    - ``'kl_divergence'`` - as in :cite:`velten:17`, computes KL-divergence between the fate probabilities\n      of a cell and the average fate probabilities. See ``early_cells`` for more information.\n    - ``'entropy'`` - as in :cite:`setty:19`, computes entropy over a cells fate probabilities.\nbackward\n    Direction of the process.\nlineages\n    Lineages to plot. If :obj:`None`, plot all lineages.\nearly_cells\n    Cell ids or a mask marking early cells used to define the average fate probabilities. If :obj:`None`,\n    use all cells. Only used when ``'kl_divergence'`` is in the ``keys``. If a :class:`dict`, key specifies\n    a cluster key in :attr:`~anndata.AnnData.obs` and the values specify cluster labels containing early cells.\nlineage_order\n    Can be one of the following:\n\n    - :obj:`None` - it will be determined automatically, based on the number of lineages.\n    - ``'optimal'`` - order lineages optimally by solving the Traveling salesman problem (TSP).\n      Recommended for <= :math:`20` lineages.\n    - ``'default'`` - use the order as specified by ``lineages``.\nmetric\n    Metric to use when constructing pairwise distance matrix when ``lineage_order = 'optimal'``. For available\n    options, see :func:`~sklearn.metrics.pairwise_distances`.\nnormalize_by_mean\n    If :obj:`True`, normalize each lineage by its mean probability, as done in :cite:`velten:17`.\nncols\n    Number of columns when plotting multiple ``keys``.\nspace\n    Horizontal and vertical space between for :func:`~matplotlib.pyplot.subplots_adjust`.\nuse_raw\n    Whether to access :attr:`~anndata.AnnData.raw` when there are ``keys`` in :attr:`~anndata.AnnData.var_names`.\ntext_kwargs\n    Keyword arguments for :meth:`~matplotlib.axes.Axes.text`.\nlabel_distance\n    Distance at which the lineage labels will be drawn.\nlabel_rot\n    How to rotate the labels. Valid options are:\n\n    - ``'best'`` - rotate labels so that they are easily readable.\n    - ``'default'`` - use :mod:`matplotlib`'s default.\n    - :obj:`None` - same as ``'default'``.\n    - :class:`float`, all labels will be rotated by this many degrees.\nshow_edges\n    Whether to show the edges surrounding the simplex.\nkey_added\n    Key in :attr:`~anndata.AnnData.obsm` where to add the circular embedding. If :obj:`None`, it will be set to\n    ``'X_fate_simplex_{fwd,bwd}'``, based on the ``backward``.\nfigsize\n    Size of the figure.\ndpi\n    Dots per inch.\nsave\n    Filename where to save the plot.\nkwargs\n    Keyword arguments for :func:`~scvelo.pl.scatter`.\n\nReturns\n-------\nNothing, just plots the figure. Optionally saves it based on ``save``. Also updates ``adata`` with the following fields:\n\n- :attr:`adata.obsm['{key_added}'] <anndata.AnnData.obsm>` - the circular projection.\n- :attr:`adata.obs['to_{initial,terminal}_states_{method}'] <anndata.AnnData.obs>` - the priming degree,\n  if a method is present in the ``keys``.",
+        "description": "Visualize fate probabilities in a circular embedding :cite:`velten:17,jaitin:14`.We arrange all computed terminal states evenly spaced around the unit circle and place\ncells inside the unit circle in a way that reflects their fate probabilities. In other words,\nthe more certain we are that a cell will transition towards a given terminal state, the closer\nwe place it to that terminal state. Uncommitted cells thus reside in the middle of the circle.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.pl.circular_projection(adata=$, keys=@, backward=@, lineages=@, early_cells=@, lineage_order=$, metric=@, normalize_by_mean=@, ncols=@, space=@, use_raw=@, label_distance=@, label_rot=@, show_edges=@, key_added=@, figsize=@, dpi=@, save=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.models.GAM": {
+        "Parameters": {
+            "adata": {
+                "type": "AnnData",
+                "default": null,
+                "optional": false,
+                "description": "Annotated data object.",
+                "optional_value": true
+            },
+            "n_knots": {
+                "type": "Optional[int]",
+                "default": "6",
+                "optional": true,
+                "description": "Number of knots.",
+                "optional_value": false
+            },
+            "spline_order": {
+                "type": "int",
+                "default": "3",
+                "optional": true,
+                "description": "Order of the splines, e.g., :math:`3` for cubic splines.",
+                "optional_value": false
+            },
+            "distribution": {
+                "type": "Literal[normal, binomial, poisson, gamma, gaussian, inv_gauss]",
+                "default": "gamma",
+                "optional": true,
+                "description": "Name of the distribution. Available distributions can be found\n`here <https://pygam.readthedocs.io/en/latest/notebooks/tour_of_pygam.html#Distribution:>`__.",
+                "optional_value": true
+            },
+            "link": {
+                "type": "Literal[identity, logit, inverse, log, inv_squared]",
+                "default": "log",
+                "optional": true,
+                "description": "Name of the link function. Available link functions can be found\n`here <https://pygam.readthedocs.io/en/latest/notebooks/tour_of_pygam.html#Link-function:>`__.",
+                "optional_value": true
+            },
+            "max_iter": {
+                "type": "int",
+                "default": "2000",
+                "optional": true,
+                "description": "Maximum number of iterations for optimization.",
+                "optional_value": false
+            },
+            "expectile": {
+                "type": "Optional[float]",
+                "default": "None",
+                "optional": true,
+                "description": "Expectile for :class:`~pygam.pygam.ExpectileGAM`. This forces the distribution to be ``'normal'``\nand link function to ``'identity'``. Must be in :math:`(0, 1)`.",
+                "optional_value": false
+            },
+            "grid": {
+                "type": "Optional[Union[str, Mapping[str, Any]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Whether to perform a grid search. Keys correspond to a parameter names and values to range to be searched.\nIf ``'default'``, use the default grid. If :obj:`None`, don't perform a grid search.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": null,
+            "description": ""
+        },
+        "Docstring": "Fit Generalized Additive Models (GAMs) using :mod:`pygam`.\n\nParameters\n----------\nadata\n    Annotated data object.\nn_knots\n    Number of knots.\nspline_order\n    Order of the splines, e.g., :math:`3` for cubic splines.\ndistribution\n    Name of the distribution. Available distributions can be found\n    `here <https://pygam.readthedocs.io/en/latest/notebooks/tour_of_pygam.html#Distribution:>`__.\nlink\n    Name of the link function. Available link functions can be found\n    `here <https://pygam.readthedocs.io/en/latest/notebooks/tour_of_pygam.html#Link-function:>`__.\nmax_iter\n    Maximum number of iterations for optimization.\nexpectile\n    Expectile for :class:`~pygam.pygam.ExpectileGAM`. This forces the distribution to be ``'normal'``\n    and link function to ``'identity'``. Must be in :math:`(0, 1)`.\ngrid\n    Whether to perform a grid search. Keys correspond to a parameter names and values to range to be searched.\n    If ``'default'``, use the default grid. If :obj:`None`, don't perform a grid search.\nspline_kwargs\n    Keyword arguments for :func:`~pygam.terms.s`.\nkwargs\n    Keyword arguments for the :class:`~pygam.pygam.GAM`.",
+        "description": "Fit Generalized Additive Models (GAMs) using :mod:`pygam`.",
+        "example": "",
+        "api_type": "class",
+        "api_calling": [
+            "cellrank.models.GAM(adata=$, n_knots=@, spline_order=@, distribution=$, link=$, max_iter=@, expectile=@, grid=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    },
+    "cellrank.pl.gene_trends": {
+        "Parameters": {
+            "adata": {
+                "type": "AnnData",
+                "default": null,
+                "optional": false,
+                "description": "Annotated data object.",
+                "optional_value": true
+            },
+            "model": {
+                "type": "Union[BaseModel, Mapping[str, Mapping[str, BaseModel]]]",
+                "default": null,
+                "optional": false,
+                "description": "Model based on :class:`~cellrank.models.BaseModel` to fit.\nIf a :class:`dict`, gene and lineage specific models can be specified. Use ``'*'`` to indicate\nall genes or lineages, for example ``{'gene_1': {'*': ...}, 'gene_2': {'lineage_1': ..., '*': ...}}``.",
+                "optional_value": false
+            },
+            "genes": {
+                "type": "Union[str, Sequence[str]]",
+                "default": null,
+                "optional": false,
+                "description": "Genes in :attr:`~anndata.AnnData.var_names`.",
+                "optional_value": false
+            },
+            "time_key": {
+                "type": "str",
+                "default": null,
+                "optional": false,
+                "description": "Key in :attr:`~anndata.AnnData.obs` where the pseudotime is stored.",
+                "optional_value": false
+            },
+            "lineages": {
+                "type": "Optional[Union[str, Sequence[str]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Names of the lineages to plot. If :obj:`None`, plot all lineages.",
+                "optional_value": false
+            },
+            "backward": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Direction of the process.",
+                "optional_value": false
+            },
+            "data_key": {
+                "type": "str",
+                "default": "X",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.layers` or ``'X'`` for :attr:`~anndata.AnnData.X` where the data is stored.",
+                "optional_value": false
+            },
+            "time_range": {
+                "type": "Optional[Union[float, tuple[Optional[float], Optional[float]], List[Optional[Union[float, tuple[Optional[float], Optional[float]]]]]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Specify start and end times:\n\n- :class:`tuple` - it specifies the minimum and maximum pseudotime. Both values can be :obj:`None`,\n  in which case the minimum is the earliest pseudotime and the maximum is automatically determined.\n- :class:`float` - it specifies the maximum pseudotime.\nThis can also be specified on per-lineage basis.",
+                "optional_value": false
+            },
+            "transpose": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "If ``same_plot = True``, group the trends by ``lineages`` instead of ``genes``.\nThis forces ``hide_cells = True``.\nIf ``same_plot = False``, show ``lineages`` in rows and ``genes`` in columns.",
+                "optional_value": false
+            },
+            "callback": {
+                "type": "Optional[Union[Callable[], Mapping[str, Mapping[str, Callable[]]]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Function which takes a :class:`~cellrank.models.BaseModel` and some keyword arguments\nfor :meth:`~cellrank.models.BaseModel.prepare` and returns the prepared model.\nCan be specified in gene- and lineage-specific manner, similarly to the :attr:`model`.",
+                "optional_value": false
+            },
+            "conf_int": {
+                "type": "Union[bool, float]",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to compute and show confidence interval. If the ``model`` is :class:`~cellrank.models.GAMR`,\nit can also specify the confidence level, the default is :math:`0.95`.",
+                "optional_value": false
+            },
+            "same_plot": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Whether to plot all lineages for each gene in the same plot.",
+                "optional_value": false
+            },
+            "hide_cells": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "If :obj:`True`, hide all cells.",
+                "optional_value": false
+            },
+            "perc": {
+                "type": "Optional[Union[tuple[float, float], Sequence[tuple[float, float]]]]",
+                "default": "None",
+                "optional": true,
+                "description": "Percentile for colors. Valid values are in :math:`[0, 100]`.\nThis can improve visualization. Can be specified individually for each lineage.",
+                "optional_value": false
+            },
+            "lineage_cmap": {
+                "type": "Optional[ListedColormap]",
+                "default": "None",
+                "optional": true,
+                "description": "Categorical colormap to use when coloring in the lineages. If :obj:`None` and ``same_plot = True``,\nuse the corresponding colors in :attr:`~anndata.AnnData.uns`, otherwise use ``'black'``.",
+                "optional_value": false
+            },
+            "fate_prob_cmap": {
+                "type": "ListedColormap",
+                "default": "<matplotlib.colors.ListedColormap object at 0x7f0dcf9ae040>",
+                "optional": true,
+                "description": "Continuous colormap to use when visualizing the fate probabilities for each lineage.\nOnly used when ``same_plot = False``.",
+                "optional_value": false
+            },
+            "cell_color": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Key in :attr:`~anndata.AnnData.obs` or :attr:`~anndata.AnnData.var_names` used for coloring the cells.",
+                "optional_value": false
+            },
+            "cell_alpha": {
+                "type": "float",
+                "default": "0.6",
+                "optional": true,
+                "description": "Alpha channel for cells.",
+                "optional_value": false
+            },
+            "lineage_alpha": {
+                "type": "float",
+                "default": "0.2",
+                "optional": true,
+                "description": "Alpha channel for lineage confidence intervals.",
+                "optional_value": false
+            },
+            "size": {
+                "type": "float",
+                "default": "15",
+                "optional": true,
+                "description": "Size of the points.",
+                "optional_value": false
+            },
+            "lw": {
+                "type": "float",
+                "default": "2",
+                "optional": true,
+                "description": "Line width of the smoothed values.",
+                "optional_value": false
+            },
+            "cbar": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to show colorbar. Always shown when percentiles for lineages differ.\nOnly used when ``same_plot = False``.",
+                "optional_value": false
+            },
+            "margins": {
+                "type": "float",
+                "default": "0.015",
+                "optional": true,
+                "description": "Margins around the plot.",
+                "optional_value": false
+            },
+            "sharex": {
+                "type": "Optional[Union[str, bool]]",
+                "default": "None",
+                "optional": true,
+                "description": "Whether to share x-axis. Valid options are ``'row'``, ``'col'`` or ``'none'``.",
+                "optional_value": false
+            },
+            "sharey": {
+                "type": "Optional[Union[str, bool]]",
+                "default": "None",
+                "optional": true,
+                "description": "Whether to share y-axis. Valid options are ``'row'`, ``'col'`` or ``'none'``.",
+                "optional_value": false
+            },
+            "gene_as_title": {
+                "type": "Optional[bool]",
+                "default": "None",
+                "optional": true,
+                "description": "Whether to show gene names as titles instead on y-axis.",
+                "optional_value": false
+            },
+            "legend_loc": {
+                "type": "Optional[str]",
+                "default": "best",
+                "optional": true,
+                "description": "Location of the legend displaying lineages. Only used when ``same_plot = True``.",
+                "optional_value": false
+            },
+            "obs_legend_loc": {
+                "type": "Optional[str]",
+                "default": "best",
+                "optional": true,
+                "description": "Location of the legend when ``cell_color`` corresponds to a categorical variable.",
+                "optional_value": false
+            },
+            "ncols": {
+                "type": "int",
+                "default": "2",
+                "optional": true,
+                "description": "Number of columns of the plot when plotting multiple genes. Only used when ``same_plot = True``.",
+                "optional_value": false
+            },
+            "suptitle": {
+                "type": "Optional[str]",
+                "default": "None",
+                "optional": true,
+                "description": "Suptitle of the figure.",
+                "optional_value": false
+            },
+            "return_models": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "If :obj:`True`, return the fitted models for each gene in ``genes`` and lineage in ``lineages``.",
+                "optional_value": false
+            },
+            "n_jobs": {
+                "type": "Optional[int]",
+                "default": "1",
+                "optional": true,
+                "description": "Number of parallel jobs. If -1, use all available cores. If :obj:`None` or 1, the execution is sequential.",
+                "optional_value": false
+            },
+            "backend": {
+                "type": "Literal[loky, multiprocessing, threading]",
+                "default": "loky",
+                "optional": true,
+                "description": "Which backend to use for parallelization. See :class:`~joblib.Parallel` for valid options.",
+                "optional_value": true
+            },
+            "show_progress_bar": {
+                "type": "bool",
+                "default": "True",
+                "optional": true,
+                "description": "Whether to show a progress bar. Disabling it may slightly improve performance.",
+                "optional_value": false
+            },
+            "figsize": {
+                "type": "Optional[tuple[float, float]]",
+                "default": "None",
+                "optional": true,
+                "description": "Size of the figure.",
+                "optional_value": false
+            },
+            "dpi": {
+                "type": "Optional[int]",
+                "default": "None",
+                "optional": true,
+                "description": "Dots per inch.",
+                "optional_value": false
+            },
+            "save": {
+                "type": "Optional[Union[Path, str]]",
+                "default": "None",
+                "optional": true,
+                "description": "Filename where to save the plot.",
+                "optional_value": false
+            },
+            "return_figure": {
+                "type": "bool",
+                "default": "False",
+                "optional": true,
+                "description": "Whether to return the figure object.",
+                "optional_value": false
+            }
+        },
+        "Returns": {
+            "type": "Optional[Mapping[str, Mapping[str, BaseModel]]]",
+            "description": "If ``return_models = False``, just plots the figure and optionally saves it based on ``save``.\nOtherwise returns the fitted models as ``{'gene_1': {'lineage_1': <model_11>, ...}, ...}``.\nModels which have failed will be instances of :class:`cellrank.models.FailedModel`."
+        },
+        "Docstring": "Plot gene expression trends along lineages.\n\n.. seealso::\n    - See :doc:`../../../notebooks/tutorials/estimators/800_gene_trends` on how to\n      visualize the gene trends.\n\nEach lineage is defined via its lineage weights. This function accepts any model based off\n:class:`~cellrank.models.BaseModel` to fit gene expression, where we take the lineage weights\ninto account in the loss function.\n\nParameters\n----------\nadata\n    Annotated data object.\nmodel\n    Model based on :class:`~cellrank.models.BaseModel` to fit.\n    If a :class:`dict`, gene and lineage specific models can be specified. Use ``'*'`` to indicate\n    all genes or lineages, for example ``{'gene_1': {'*': ...}, 'gene_2': {'lineage_1': ..., '*': ...}}``.\ngenes\n    Genes in :attr:`~anndata.AnnData.var_names`.\ntime_key\n    Key in :attr:`~anndata.AnnData.obs` where the pseudotime is stored.\nlineages\n    Names of the lineages to plot. If :obj:`None`, plot all lineages.\nbackward\n    Direction of the process.\ndata_key\n    Key in :attr:`~anndata.AnnData.layers` or ``'X'`` for :attr:`~anndata.AnnData.X` where the data is stored.\ntime_range\n    Specify start and end times:\n\n    - :class:`tuple` - it specifies the minimum and maximum pseudotime. Both values can be :obj:`None`,\n      in which case the minimum is the earliest pseudotime and the maximum is automatically determined.\n    - :class:`float` - it specifies the maximum pseudotime.\n    This can also be specified on per-lineage basis.\ngene_symbols\n    Key in :attr:`~anndata.AnnData.var` to use instead of :attr:`~anndata.AnnData.var_names`.\ntranspose\n    If ``same_plot = True``, group the trends by ``lineages`` instead of ``genes``.\n    This forces ``hide_cells = True``.\n    If ``same_plot = False``, show ``lineages`` in rows and ``genes`` in columns.\ncallback\n    Function which takes a :class:`~cellrank.models.BaseModel` and some keyword arguments\n    for :meth:`~cellrank.models.BaseModel.prepare` and returns the prepared model.\n    Can be specified in gene- and lineage-specific manner, similarly to the :attr:`model`.\nconf_int\n    Whether to compute and show confidence interval. If the ``model`` is :class:`~cellrank.models.GAMR`,\n    it can also specify the confidence level, the default is :math:`0.95`.\nsame_plot\n    Whether to plot all lineages for each gene in the same plot.\nhide_cells\n    If :obj:`True`, hide all cells.\nperc\n    Percentile for colors. Valid values are in :math:`[0, 100]`.\n    This can improve visualization. Can be specified individually for each lineage.\nlineage_cmap\n    Categorical colormap to use when coloring in the lineages. If :obj:`None` and ``same_plot = True``,\n    use the corresponding colors in :attr:`~anndata.AnnData.uns`, otherwise use ``'black'``.\nfate_prob_cmap\n    Continuous colormap to use when visualizing the fate probabilities for each lineage.\n    Only used when ``same_plot = False``.\ncell_color\n    Key in :attr:`~anndata.AnnData.obs` or :attr:`~anndata.AnnData.var_names` used for coloring the cells.\ncell_alpha\n    Alpha channel for cells.\nlineage_alpha\n    Alpha channel for lineage confidence intervals.\nsize\n    Size of the points.\nlw\n    Line width of the smoothed values.\ncbar\n    Whether to show colorbar. Always shown when percentiles for lineages differ.\n    Only used when ``same_plot = False``.\nmargins\n    Margins around the plot.\nsharex\n    Whether to share x-axis. Valid options are ``'row'``, ``'col'`` or ``'none'``.\nsharey\n    Whether to share y-axis. Valid options are ``'row'`, ``'col'`` or ``'none'``.\ngene_as_title\n    Whether to show gene names as titles instead on y-axis.\nlegend_loc\n    Location of the legend displaying lineages. Only used when ``same_plot = True``.\nobs_legend_loc\n    Location of the legend when ``cell_color`` corresponds to a categorical variable.\nncols\n    Number of columns of the plot when plotting multiple genes. Only used when ``same_plot = True``.\nsuptitle\n    Suptitle of the figure.\nreturn_figure\n    Whether to return the figure object.\nreturn_models\n    If :obj:`True`, return the fitted models for each gene in ``genes`` and lineage in ``lineages``.\nshow_progress_bar\n    Whether to show a progress bar. Disabling it may slightly improve performance.\nn_jobs\n    Number of parallel jobs. If -1, use all available cores. If :obj:`None` or 1, the execution is sequential.\nbackend\n    Which backend to use for parallelization. See :class:`~joblib.Parallel` for valid options.\nfigsize\n    Size of the figure.\ndpi\n    Dots per inch.\nsave\n    Filename where to save the plot.\nplot_kwargs\n    Keyword arguments for the :meth:`~cellrank.models.BaseModel.plot`.\nkwargs\n    Keyword arguments for :meth:`~cellrank.models.BaseModel.prepare`.\n\nReturns\n-------\nIf ``return_models = False``, just plots the figure and optionally saves it based on ``save``.\nOtherwise returns the fitted models as ``{'gene_1': {'lineage_1': <model_11>, ...}, ...}``.\nModels which have failed will be instances of :class:`cellrank.models.FailedModel`.",
+        "description": "Plot gene expression trends along lineages... seealso::\n    - See :doc:`../../../notebooks/tutorials/estimators/800_gene_trends` on how to\n      visualize the gene trends.\n\nEach lineage is defined via its lineage weights. This function accepts any model based off\n:class:`~cellrank.models.BaseModel` to fit gene expression, where we take the lineage weights\ninto account in the loss function.",
+        "example": "",
+        "api_type": "function",
+        "api_calling": [
+            "cellrank.pl.gene_trends(adata=$, model=@, genes=@, time_key=@, lineages=@, backward=@, data_key=@, time_range=@, transpose=@, callback=@, conf_int=@, same_plot=@, hide_cells=@, perc=@, lineage_cmap=@, fate_prob_cmap=@, cell_color=@, cell_alpha=@, lineage_alpha=@, size=@, lw=@, cbar=@, margins=@, sharex=@, sharey=@, gene_as_title=@, legend_loc=@, obs_legend_loc=@, ncols=@, suptitle=@, return_models=@, n_jobs=@, backend=$, show_progress_bar=@, figsize=@, dpi=@, save=@, return_figure=@)"
+        ],
+        "relevant APIs": [],
+        "type": "singleAPI"
+    }
+}
